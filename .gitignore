@@ -1,0 +1,15 @@
+node_modules/
+dist/
+release/
+coverage/
+.DS_Store
+.env
+.env.*
+!.env.example
+android/.gradle/
+android/local.properties
+android/app/build/
+android/app/release/
+*.jks
+*.keystore
+*.bwbackup

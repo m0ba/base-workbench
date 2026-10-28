@@ -1,0 +1,124 @@
+name: Build and publish release packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            package: mac
+            artifact: base-workbench-mac
+          - runner: windows-latest
+            package: win
+            artifact: base-workbench-windows
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build desktop package
+        run: npm run pack:${{ matrix.package }}
+      - name: Upload desktop packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: release/*
+          if-no-files-found: error
+          retention-days: 14
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install Android platform
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+      - name: Install dependencies
+        run: npm ci
+      - name: Build web assets
+        run: npm run build
+      - name: Create and sync Android project
+        run: |
+          npx cap add android
+          npx cap sync android
+      - name: Build installable APK
+        working-directory: android
+        run: ./gradlew assembleDebug
+      - name: Stage APK for the release
+        run: |
+          mkdir -p release
+          cp android/app/build/outputs/apk/debug/app-debug.apk "release/base-workbench-${GITHUB_REF_NAME}-android.apk"
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: base-workbench-android
+          path: release/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    needs: [desktop, android]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+      - name: Download all platform packages
+        uses: actions/download-artifact@v8
+        with:
+          pattern: base-workbench-*
+          path: release-assets
+          merge-multiple: true
+      - name: Prepare release notes from changelog
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const version = process.env.RELEASE_TAG.replace(/^v/, '');
+          const lines = readFileSync('CHANGELOG.md', 'utf8').split(/\r?\n/);
+          const start = lines.findIndex((line) => line.startsWith(`## [${version}]`));
+          if (start < 0) throw new Error(`CHANGELOG.md has no entry for ${version}`);
+          let end = lines.findIndex((line, index) => index > start && line.startsWith('## ['));
+          if (end < 0) end = lines.length;
+          const notes = lines.slice(start + 1, end).join('\n').trim();
+          if (!notes) throw new Error(`CHANGELOG.md entry ${version} is empty`);
+          writeFileSync('release-notes.md', notes + '\n');
+          NODE
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release-assets/* \
+            --title "基地工作台 $GITHUB_REF_NAME" \
+            --notes-file release-notes.md \
+            --verify-tag
