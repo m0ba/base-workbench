@@ -117,11 +117,18 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
+          set -euo pipefail
+          mapfile -d '' release_files < <(find release-assets -type f -print0)
+          if (( ${#release_files[@]} == 0 )); then
+            echo "No platform package files were downloaded" >&2
+            exit 1
+          fi
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber
+            gh release upload "$GITHUB_REF_NAME" "${release_files[@]}" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" release-assets/* \
+            gh release create "$GITHUB_REF_NAME" "${release_files[@]}" \
               --title "基地工作台 $GITHUB_REF_NAME" \
               --notes-file release-notes.md \
               --verify-tag
