@@ -1,6 +1,6 @@
 {
   "name": "base-workbench",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "本地优先的基地工作台：工作日志、任务进度、设备台账与数据迁移。",
   "homepage": "https://m0ba.github.io/base-workbench/",
   "repository": {
