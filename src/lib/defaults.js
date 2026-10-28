@@ -1,5 +1,5 @@
 export const APP_FORMAT_VERSION = 4;
-export const APP_VERSION = '0.3.1';
+export const APP_VERSION = '0.3.2';
 
 export function todayKey(date = new Date()) {
   const year = date.getFullYear();
