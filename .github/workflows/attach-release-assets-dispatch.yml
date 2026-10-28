@@ -40,5 +40,5 @@ jobs:
             echo "No platform package files were downloaded" >&2
             exit 1
           fi
-          gh release view "$RELEASE_TAG" >/dev/null
-          gh release upload "$RELEASE_TAG" "${release_files[@]}" --clobber
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          gh release upload "$RELEASE_TAG" "${release_files[@]}" --repo "$GITHUB_REPOSITORY" --clobber
