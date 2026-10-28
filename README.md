@@ -42,8 +42,8 @@ npm run preview
 版本更新时同步修改 `package.json` 与 `CHANGELOG.md`，提交后推送匹配的版本标签，例如：
 
 ```bash
-git tag v0.3.1
-git push origin v0.3.1
+git tag v0.3.2
+git push origin v0.3.2
 ```
 
 GitHub Actions 会按标签构建 Mac、Windows 和 Android 安装包，从 `CHANGELOG.md` 生成发布说明，并创建 GitHub Release。推送 `main` 会部署静态 PWA 页面。
