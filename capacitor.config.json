@@ -1,0 +1,8 @@
+{
+  "appId": "com.haozihao.baseworkbench",
+  "appName": "基地工作台",
+  "webDir": "dist",
+  "android": {
+    "backgroundColor": "#f5f7f4"
+  }
+}
