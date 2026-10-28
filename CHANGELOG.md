@@ -1,5 +1,16 @@
 # 更新日志
 
+## [0.3.2] - 2026-10-29
+
+### 修复
+
+- 将 Capacitor 配置由 TypeScript 改为 JSON，避免 Android CI 因缺少 TypeScript 而失败。
+- 更新 Android SDK 初始化步骤，修复 Android 安装包构建失败。
+
+### 发布
+
+- 构建 Mac、Windows 与 Android 平台安装包。
+
 ## [0.3.1] - 2026-10-29
 
 ### 修复
