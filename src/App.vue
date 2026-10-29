@@ -397,7 +397,7 @@ async function openReimbursement() {
       if (!result?.ok) throw new Error(result?.message || '无法打开报账助手');
       return;
     }
-    window.open(address, '_blank', 'noopener,noreferrer');
+    window.open(address, '_blank');
   } catch (error) {
     showToast(error.message || '报账助手暂时无法打开');
   } finally {
