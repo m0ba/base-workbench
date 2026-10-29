@@ -120,7 +120,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -d '' release_files < <(find release-assets -type f -print0)
+          mapfile -d '' release_files < <(
+            find release-assets -type f -name 'base-workbench-*.zip' -print0
+            find release-assets -type f -name 'base-workbench-*.exe' -print0
+            find release-assets -type f -name 'base-workbench-*.apk' -print0
+          )
           if (( ${#release_files[@]} == 0 )); then
             echo "No platform package files were downloaded" >&2
             exit 1
