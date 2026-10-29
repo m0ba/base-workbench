@@ -22,13 +22,14 @@ const navItems = [
 const mobileNavItems = [
   ...navItems.slice(0, 4),
   { id: 'reserved-expert', title: '农事专家', icon: 'leaf', reserved: true },
-  { id: 'reserved-reimbursement', title: '报账助手', icon: 'receipt', reserved: true },
+  { id: 'reimbursement', title: '报账助手', icon: 'receipt', integrated: true },
   navItems[4]
 ];
 const settingsItems = [
   { id: 'profile', title: '基地资料', icon: 'building' },
   { id: 'data', title: '数据迁移', icon: 'archive' },
   { id: 'system', title: '系统信息', icon: 'settings' },
+  { id: 'integrations', title: '应用接入', icon: 'plug' },
   { id: 'updates', title: '版本与更新', icon: 'refresh' },
   { id: 'help', title: '使用帮助', icon: 'help' },
   { id: 'about', title: '关于工作台', icon: 'info' }
@@ -36,9 +37,13 @@ const settingsItems = [
 const releasePlatforms = [
   { id: 'mac', name: 'Mac 安装包', icon: 'monitor' },
   { id: 'windows', name: 'Windows 安装包', icon: 'monitor' },
-  { id: 'android', name: 'Android APK', icon: 'phone' }
+  { id: 'android', name: 'Android APK', icon: 'phone' },
+  { id: 'reimbursement', name: '报账助手安装包', icon: 'receipt' }
 ];
 const defaultReleaseLink = 'https://github.com/m0ba/base-workbench/releases/latest';
+const defaultReimbursementLink = `${import.meta.env.BASE_URL}tools/reimbursement/`;
+const reimbursementDownloadLink = 'https://github.com/m0ba/reimbursement-assistant/releases/latest';
+const reimbursementAppId = 'reimbursement-assistant';
 
 const authenticated = ref(false);
 const loginPassword = ref('');
@@ -55,7 +60,9 @@ const settingsTab = ref('profile');
 const settingsName = ref('');
 const settingsDescription = ref('');
 const settingsLocation = ref('');
-const settingsReleaseLinks = reactive({ mac: '', windows: '', android: '' });
+const settingsReleaseLinks = reactive({ mac: '', windows: '', android: '', reimbursement: '' });
+const settingsReimbursementLink = ref('');
+const reimbursementLaunching = ref(false);
 const modal = ref('');
 const modalMode = ref('create');
 const formError = ref('');
@@ -190,6 +197,7 @@ const reservedModules = computed(() => state.modules.filter((item) => item.locke
 const moduleSlots = computed(() => state.modules.filter((item) => !item.locked).slice(0, 3));
 const expertModule = computed(() => reservedModules.value.find((item) => item.id === 'reserved-agricultural-expert'));
 const reimbursementModule = computed(() => reservedModules.value.find((item) => item.id === 'reserved-reimbursement'));
+const reimbursementAddress = computed(() => settingsReimbursementLink.value.trim() || new URL(defaultReimbursementLink, window.location.href).href);
 const archivedPurchaseCount = computed(() => state.archivedPurchases.length);
 const platformName = computed(() => {
   if (window.location.protocol === 'baseworkbench:') return 'Mac / Windows 桌面应用';
@@ -352,6 +360,48 @@ function setPage(nextPage) {
   if (nextPage === 'logs') {
     clearTimeout(reminderAdvanceTimer);
     reminderAdvanceTimer = setTimeout(processTaskReminders, 180);
+  }
+}
+
+function reimbursementDesktopBridge() {
+  return window.desktopWorkspace && typeof window.desktopWorkspace.openTool === 'function'
+    ? window.desktopWorkspace
+    : null;
+}
+
+function isValidToolAddress(value) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+async function openReimbursement() {
+  if (reimbursementLaunching.value) return;
+  const address = reimbursementAddress.value;
+  if (!isValidToolAddress(address) && !address.startsWith('baseworkbench:')) return showToast('报账助手地址无效，请在设置中检查。');
+  reimbursementLaunching.value = true;
+  try {
+    const bridge = reimbursementDesktopBridge();
+    if (bridge) {
+      const desktopAddress = address.startsWith('http:') || address.startsWith('https:')
+        ? new URL(address).pathname + new URL(address).search + new URL(address).hash
+        : address;
+      const result = await bridge.openTool({
+        id: reimbursementAppId,
+        title: '报账助手',
+        url: desktopAddress
+      });
+      if (!result?.ok) throw new Error(result?.message || '无法打开报账助手');
+      return;
+    }
+    window.open(address, '_blank', 'noopener,noreferrer');
+  } catch (error) {
+    showToast(error.message || '报账助手暂时无法打开');
+  } finally {
+    reimbursementLaunching.value = false;
   }
 }
 
@@ -883,7 +933,8 @@ function openSettings(tab = 'profile') {
   settingsName.value = state.preferences.baseName || '我的基地';
   settingsDescription.value = state.preferences.baseDescription || '';
   settingsLocation.value = state.preferences.baseLocation || '';
-  Object.assign(settingsReleaseLinks, { mac: '', windows: '', android: '', ...(state.preferences.releaseLinks || {}) });
+  Object.assign(settingsReleaseLinks, { mac: '', windows: '', android: '', reimbursement: '', ...(state.preferences.releaseLinks || {}) });
+  settingsReimbursementLink.value = state.preferences.toolLinks?.reimbursement || '';
   settingsOpen.value = true;
 }
 
@@ -897,9 +948,20 @@ function saveBaseProfile() {
   showToast('基地资料已保存');
 }
 
+function saveReimbursementIntegration() {
+  const raw = settingsReimbursementLink.value.trim();
+  if (raw && !isValidToolAddress(raw)) return showToast('报账助手地址需使用有效的 HTTP 或 HTTPS 地址');
+  state.preferences.toolLinks = {
+    ...(state.preferences.toolLinks || {}),
+    reimbursement: raw ? new URL(raw).href : ''
+  };
+  settingsReimbursementLink.value = state.preferences.toolLinks.reimbursement;
+  showToast(raw ? '报账助手入口已更新' : '已恢复报账助手默认入口');
+}
+
 function saveReleaseLinks() {
   const next = {};
-  for (const platform of ['mac', 'windows', 'android']) {
+  for (const platform of ['mac', 'windows', 'android', 'reimbursement']) {
     const raw = settingsReleaseLinks[platform].trim();
     if (!raw) {
       next[platform] = '';
@@ -920,7 +982,8 @@ function saveReleaseLinks() {
 }
 
 function releaseLink(platform) {
-  const raw = state.preferences.releaseLinks?.[platform] || defaultReleaseLink;
+  const raw = state.preferences.releaseLinks?.[platform]
+    || (platform === 'reimbursement' ? reimbursementDownloadLink : defaultReleaseLink);
   try {
     const url = new URL(raw);
     return url.protocol === 'https:' ? url.href : '';
@@ -1123,11 +1186,11 @@ function statusClass(status) {
             <span>{{ expertModule?.title || '农事专家' }}</span>
             <span class="nav-reserved-badge">预留</span>
           </div>
-          <div class="nav-item nav-item-placeholder" aria-disabled="true">
+          <button class="nav-item nav-tool-link" type="button" :disabled="reimbursementLaunching" @click="openReimbursement" :title="reimbursementLaunching ? '正在打开报账助手' : '打开报账助手 · 始终复用同一窗口'">
             <AppIcon name="receipt" :size="19" />
             <span>{{ reimbursementModule?.title || '报账助手' }}</span>
-            <span class="nav-reserved-badge">预留</span>
-          </div>
+            <span class="nav-tool-badge">{{ reimbursementLaunching ? '打开中' : '打开' }}</span>
+          </button>
         </div>
         <button class="nav-item" :class="{ active: page === 'modules' }" type="button" @click="setPage('modules')">
           <AppIcon name="sparkles" :size="19" />
@@ -1403,18 +1466,24 @@ function statusClass(status) {
 </div>
 </div></div><div v-else class="empty-list inventory-empty"><div class="empty-list-icon"><AppIcon name="box" :size="22" /></div><strong>{{ state.equipment.length ? '没有找到匹配设备' : '设备台账还是空的' }}</strong><p>{{ state.equipment.length ? '换个关键词试试。' : '登记一件常用设备，之后查找会更方便。' }}</p><button v-if="!state.equipment.length" class="button button-outline button-small" type="button" @click="openEquipmentModal()"><AppIcon name="plus" :size="15" />添加第一件设备</button></div></section></template>
 
-        <template v-else-if="page === 'modules'"><section class="page-intro"><div><p class="eyebrow">FUTURE MODULES</p><h2>模块中心</h2><p>为未来的传感器数据和基地工具，先留出三个清晰的位置。</p></div><span class="reserved-count"><i></i>3 个模块位</span></section><section class="module-note panel"><div class="module-note-icon"><AppIcon name="shield" :size="18" /></div><p>所有卡片目前都只是占位。农事专家和报账助手不会从这里启动、连接或修改。</p></section><section class="module-grid"><article v-for="item in moduleSlots" :key="item.id" class="module-card"><div class="module-card-head"><div class="module-icon" :class="'module-icon-' + item.icon"><AppIcon :name="item.icon" :size="21" /></div><span class="module-status"><i></i>预留中</span></div><div class="module-copy"><h3>{{ item.title }}</h3><p>预留的基地工具入口，当前不会打开应用。</p></div><div class="module-card-footer"><span><AppIcon name="clock" :size="14" />待接入</span><button type="button" class="text-button" @click="editModuleSlot(item)"><AppIcon name="edit" :size="14" />修改显示</button></div></article></section><section class="module-footnote"><div class="footnote-mark"><AppIcon name="sparkles" :size="17" /></div><div><strong>后续接入时再配置入口</strong><p>模块卡片统一预留名称、图标、启用状态和目标地址字段。</p></div></section></template>
+        <template v-else-if="page === 'modules'"><section class="page-intro"><div><p class="eyebrow">FUTURE MODULES</p><h2>模块中心</h2><p>为未来的传感器数据和基地工具，先留出三个清晰的位置。</p></div><span class="reserved-count"><i></i>3 个模块位</span></section><section class="module-note panel"><div class="module-note-icon"><AppIcon name="shield" :size="18" /></div><p>这里只保留未来的基地工具位置。农事专家暂未接入；报账助手请从左侧导航或手机底栏打开。</p></section><section class="module-grid"><article v-for="item in moduleSlots" :key="item.id" class="module-card"><div class="module-card-head"><div class="module-icon" :class="'module-icon-' + item.icon"><AppIcon :name="item.icon" :size="21" /></div><span class="module-status"><i></i>预留中</span></div><div class="module-copy"><h3>{{ item.title }}</h3><p>预留的基地工具入口，当前不会打开应用。</p></div><div class="module-card-footer"><span><AppIcon name="clock" :size="14" />待接入</span><button type="button" class="text-button" @click="editModuleSlot(item)"><AppIcon name="edit" :size="14" />修改显示</button></div></article></section><section class="module-footnote"><div class="footnote-mark"><AppIcon name="sparkles" :size="17" /></div><div><strong>后续接入时再配置入口</strong><p>模块卡片统一预留名称、图标、启用状态和目标地址字段。</p></div></section></template>
       </main>
       <footer class="mobile-footer" aria-label="主导航">
         <template v-for="item in mobileNavItems" :key="item.id">
-          <button v-if="!item.reserved" type="button" :class="{ active: page === item.id }" @click="setPage(item.id)">
+          <button v-if="item.integrated" type="button" class="mobile-tool-link" @click="openReimbursement">
+            <AppIcon :name="item.icon" :size="19" />
+            <small>{{ item.title }}</small>
+            <i>APP</i>
+          </button>
+          <div v-else-if="item.reserved" class="mobile-nav-placeholder" aria-disabled="true">
+            <AppIcon :name="item.icon" :size="19" />
+            <small>{{ item.title }}</small>
+            <i>预留</i>
+          </div>
+          <button v-else type="button" :class="{ active: page === item.id }" @click="setPage(item.id)">
             <AppIcon :name="item.icon" :size="18" />
             <span>{{ item.id === 'inventory' ? '设备' : item.id === 'modules' ? '模块' : item.title }}</span>
           </button>
-          <div v-else class="mobile-nav-item nav-reserved-mobile" aria-disabled="true" :title="item.title + '暂未接入'">
-            <AppIcon :name="item.icon" :size="18" />
-            <span>{{ item.id === 'reserved-expert' ? '农事专家' : '报账助手' }}</span>
-          </div>
         </template>
       </footer>
     </div>
@@ -1426,8 +1495,9 @@ function statusClass(status) {
       <template v-if="settingsTab === 'profile'"><div class="settings-section-intro"><h4>基地资料</h4><p>这些信息会显示在“我的基地”首页。</p></div><div class="settings-form profile-settings-form"><label class="form-field"><span>基地名称</span><input v-model="settingsName" maxlength="48" placeholder="例如：青禾种植基地" /></label><label class="form-field"><span>常用地点</span><input v-model="settingsLocation" maxlength="80" placeholder="例如：1 号棚、育苗区" /></label><label class="form-field"><span>首页介绍</span><textarea v-model="settingsDescription" rows="3" maxlength="180" placeholder="用一句话介绍你的基地"></textarea></label><button class="button button-primary" type="button" @click="saveBaseProfile"><AppIcon name="check" :size="16" />保存资料</button></div><div class="settings-inline-tip"><AppIcon name="image" :size="16" /><span>首页展示黄瓜植株照片，图片会随应用一起打包。</span></div></template>
       <template v-else-if="settingsTab === 'data'"><div class="settings-section-intro"><h4>完整数据迁移</h4><p>导出一个迁移包，在新设备导入后继续使用。</p></div><div class="data-transfer-card"><div class="transfer-card-icon"><AppIcon name="archive" :size="21" /></div><div><strong>基地工作台迁移包</strong><small>包含 {{ state.logs.length }} 条日志、{{ state.tasks.length }} 项任务、{{ state.equipment.length }} 件设备、{{ moduleSlots.length }} 个模块位与所有设置。</small></div></div><div class="transfer-actions"><button class="button button-primary" type="button" :disabled="isBusy" @click="exportBackup"><AppIcon name="download" :size="16" />导出全部数据</button><button class="button button-outline" type="button" :disabled="isBusy" @click="selectBackupFile"><AppIcon name="upload" :size="16" />导入迁移包</button></div><div v-if="archivedPurchaseCount" class="archive-note"><AppIcon name="info" :size="15" /><span>保留了 {{ archivedPurchaseCount }} 条旧版本采购历史，已从当前界面归档。</span></div><div v-if="snapshotInfo?.state" class="snapshot-settings-row"><div><strong>最近的安全快照</strong><small>{{ new Date(snapshotInfo.savedAt).toLocaleString('zh-CN') }}</small></div><button class="text-button" type="button" @click="restoreSnapshot">恢复快照</button></div><div class="settings-inline-tip"><AppIcon name="shield" :size="16" /><span>数据和迁移包都只保存在你的设备。各设备互不联网同步。</span></div></template>
       <template v-else-if="settingsTab === 'system'"><div class="settings-section-intro"><h4>系统信息</h4><p>当前工作台运行环境与本地资料概况。</p></div><div class="system-info-grid"><div><small>应用名称</small><strong>基地工作台</strong></div><div><small>版本</small><strong>v{{ VERSION }}</strong></div><div><small>当前平台</small><strong>{{ platformName }}</strong></div><div><small>数据存储</small><strong>本机 IndexedDB</strong></div><div><small>工作日志</small><strong>{{ state.logs.length }} 条</strong></div><div><small>任务事项</small><strong>{{ state.tasks.length }} 项</strong></div><div><small>设备台账</small><strong>{{ state.equipment.length }} 件</strong></div></div><div class="settings-inline-tip"><AppIcon name="shield" :size="16" /><span>没有账号系统或云端同步；迁移设备请使用“数据迁移”。</span></div><button class="button button-quiet logout-button" type="button" @click="logout"><AppIcon name="lock" :size="15" />退出工作台</button></template>
-      <template v-else-if="settingsTab === 'updates'"><div class="settings-section-intro"><h4>版本与更新</h4><p>安装包发布后，可在这里打开对应平台的 GitHub Releases 下载页。</p></div><div class="version-card"><span class="version-icon"><AppIcon name="refresh" :size="19" /></span><div><small>当前版本</small><strong>基地工作台 v{{ VERSION }}</strong></div><span class="version-current"><i></i>当前版本</span></div><div class="release-link-list"><div v-for="platform in releasePlatforms" :key="platform.id" class="release-link-row"><span class="release-platform-icon"><AppIcon :name="platform.icon" :size="17" /></span><div><strong>{{ platform.name }}</strong><small>{{ releaseLink(platform.id) ? 'GitHub Releases 最新安装包' : '发布后在这里配置下载链接' }}</small></div><a v-if="releaseLink(platform.id)" :href="releaseLink(platform.id)" target="_blank" rel="noopener noreferrer" class="button button-outline button-small">下载最新版<AppIcon name="arrow" :size="13" /></a><span v-else class="release-pending">待发布</span></div></div><details class="release-config"><summary>配置平台下载链接</summary><div class="release-form"><label class="form-field"><span>Mac 下载页</span><input v-model="settingsReleaseLinks.mac" type="url" placeholder="https://github.com/…/releases/latest" /></label><label class="form-field"><span>Windows 下载页</span><input v-model="settingsReleaseLinks.windows" type="url" placeholder="https://github.com/…/releases/latest" /></label><label class="form-field"><span>Android APK 下载页</span><input v-model="settingsReleaseLinks.android" type="url" placeholder="https://github.com/…/releases/latest" /></label><button class="button button-primary button-small" type="button" @click="saveReleaseLinks">保存链接</button></div></details></template>
-      <template v-else-if="settingsTab === 'help'"><div class="settings-section-intro"><h4>使用帮助</h4><p>几个简单步骤，开始记录基地日常。</p></div><div class="help-list"><article><span>01</span><div><strong>记录今天的工作</strong><p>在“工作台”分别填写已完成、正在做和下一步计划；预计完成与计划开始时间为选填；没设置时间不会提醒。到期后会在“工作日志”右下角提示，关闭后 1 小时再询问。</p></div></article><article><span>02</span><div><strong>回看工作日志</strong><p>在“工作日志”搜索内容、地点或日期。正在做可标记完成或取消；下一步可开始或删除。状态变更会先确认。</p></div></article><article><span>03</span><div><strong>维护设备台账</strong><p>登记设备名称、型号、位置、状态、购入与保修信息；电脑每行最多显示 5 件，手机每行 2 件。</p></div></article><article><span>04</span><div><strong>迁移到新设备</strong><p>在“数据迁移”导出完整迁移包，再在新设备登录后导入。</p></div></article><article><span>05</span><div><strong>理解预留卡片</strong><p>农事专家、报账助手和模块中心目前只显示占位，暂不启动或连接现有应用。</p></div></article></div></template>
+      <template v-else-if="settingsTab === 'integrations'"><div class="settings-section-intro"><h4>应用接入</h4><p>从工作台打开独立业务应用，原应用的文件和数据保持不变。</p></div><article class="integration-card"><span class="integration-icon"><AppIcon name="receipt" :size="21" /></span><div class="integration-copy"><div><strong>报账助手</strong><span class="integration-ready"><i></i>已接入</span></div><p>可直接从工作台打开；桌面版始终复用同一个应用窗口，网页与手机打开独立页面。</p><small>已随工作台打包；无需先另装应用</small></div><button class="button button-primary button-small" type="button" :disabled="reimbursementLaunching" @click="openReimbursement"><AppIcon name="external" :size="14" />{{ reimbursementLaunching ? '打开中…' : '现在打开' }}</button></article><label class="form-field integration-address"><span>报账助手地址</span><input v-model="settingsReimbursementLink" type="url" placeholder="留空使用工作台内置版本" /></label><div class="integration-actions"><button class="button button-primary button-small" type="button" @click="saveReimbursementIntegration">保存入口</button><a :href="releaseLink('reimbursement')" target="_blank" rel="noopener noreferrer" class="button button-outline button-small">查看安装包<AppIcon name="external" :size="13" /></a></div><div class="settings-inline-tip"><AppIcon name="shield" :size="16" /><span>工作台只负责打开内置入口，不读取或修改原报账助手项目的代码、发票、草稿和设置。</span></div></template>
+      <template v-else-if="settingsTab === 'updates'"><div class="settings-section-intro"><h4>版本与更新</h4><p>安装包发布后，可在这里打开对应平台的 GitHub Releases 下载页。</p></div><div class="version-card"><span class="version-icon"><AppIcon name="refresh" :size="19" /></span><div><small>当前版本</small><strong>基地工作台 v{{ VERSION }}</strong></div><span class="version-current"><i></i>当前版本</span></div><div class="release-link-list"><div v-for="platform in releasePlatforms" :key="platform.id" class="release-link-row"><span class="release-platform-icon"><AppIcon :name="platform.icon" :size="17" /></span><div><strong>{{ platform.name }}</strong><small>{{ releaseLink(platform.id) ? 'GitHub Releases 最新安装包' : '发布后在这里配置下载链接' }}</small></div><a v-if="releaseLink(platform.id)" :href="releaseLink(platform.id)" target="_blank" rel="noopener noreferrer" class="button button-outline button-small">下载最新版<AppIcon name="arrow" :size="13" /></a><span v-else class="release-pending">待发布</span></div></div><details class="release-config"><summary>配置平台下载链接</summary><div class="release-form"><label class="form-field"><span>Mac 下载页</span><input v-model="settingsReleaseLinks.mac" type="url" placeholder="https://github.com/…/releases/latest" /></label><label class="form-field"><span>Windows 下载页</span><input v-model="settingsReleaseLinks.windows" type="url" placeholder="https://github.com/…/releases/latest" /></label><label class="form-field"><span>Android APK 下载页</span><input v-model="settingsReleaseLinks.android" type="url" placeholder="https://github.com/…/releases/latest" /></label><label class="form-field"><span>报账助手下载页</span><input v-model="settingsReleaseLinks.reimbursement" type="url" placeholder="https://github.com/…/releases/latest" /></label><button class="button button-primary button-small" type="button" @click="saveReleaseLinks">保存链接</button></div></details></template>
+      <template v-else-if="settingsTab === 'help'"><div class="settings-section-intro"><h4>使用帮助</h4><p>几个简单步骤，开始记录基地日常。</p></div><div class="help-list"><article><span>01</span><div><strong>记录今天的工作</strong><p>在“工作台”分别填写已完成、正在做和下一步计划；预计完成与计划开始时间为选填；没设置时间不会提醒。到期后会在“工作日志”右下角提示，关闭后 1 小时再询问。</p></div></article><article><span>02</span><div><strong>回看工作日志</strong><p>在“工作日志”搜索内容、地点或日期。正在做可标记完成或取消；下一步可开始或删除。状态变更会先确认。</p></div></article><article><span>03</span><div><strong>维护设备台账</strong><p>登记设备名称、型号、位置、状态、购入与保修信息；电脑每行最多显示 5 件，手机每行 2 件。</p></div></article><article><span>04</span><div><strong>迁移到新设备</strong><p>在“数据迁移”导出完整迁移包，再在新设备登录后导入。</p></div></article><article><span>05</span><div><strong>打开报账助手</strong><p>点击左侧“报账助手”即可打开独立应用；桌面版始终复用同一窗口。应用接入里可修改入口地址。</p></div></article></div></template>
       <template v-else><div class="about-card"><span class="about-mark"><AppIcon name="leaf" :size="24" /></span><p class="eyebrow">ABOUT THIS WORKSPACE</p><h4>{{ baseName }}</h4><p>基地工作台是一款本地优先的日常工作工具，用清楚的日志、设备信息和迁移备份，把基地事务放在手边。</p><div class="about-tags"><span>本机保存</span><span>轻量记录</span><span>逐步扩展</span></div><small>基地工作台 · v{{ VERSION }}</small></div></template>
       </div></div></section></div>
 

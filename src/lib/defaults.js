@@ -1,5 +1,5 @@
 export const APP_FORMAT_VERSION = 4;
-export const APP_VERSION = '0.3.2';
+export const APP_VERSION = '0.4.0';
 
 export function todayKey(date = new Date()) {
   const year = date.getFullYear();
@@ -107,9 +107,9 @@ export function createDefaultModules() {
       id: 'reserved-reimbursement',
       title: '报账助手',
       icon: 'receipt',
-      description: '预留入口',
-      status: 'reserved',
-      target: null,
+      description: '独立业务应用',
+      status: 'connected',
+      target: 'tools/reimbursement/',
       locked: true
     },
     {
@@ -156,7 +156,8 @@ export function createEmptyState() {
       baseLocation: '',
       locations: [],
       lastOpenedPage: 'base',
-      releaseLinks: { mac: '', windows: '', android: '' }
+      releaseLinks: { mac: '', windows: '', android: '', reimbursement: '' },
+      toolLinks: { reimbursement: '' }
     },
     updatedAt: new Date().toISOString()
   };
@@ -273,7 +274,8 @@ export function normalizeState(value) {
       ...preferences,
       baseLocation: typeof preferences.baseLocation === 'string' ? preferences.baseLocation : '',
       locations,
-      releaseLinks: { ...empty.preferences.releaseLinks, ...(preferences.releaseLinks || {}) }
+      releaseLinks: { ...empty.preferences.releaseLinks, ...(preferences.releaseLinks || {}) },
+      toolLinks: { ...empty.preferences.toolLinks, ...(preferences.toolLinks || {}) }
     },
     updatedAt: value.updatedAt || new Date().toISOString()
   };
