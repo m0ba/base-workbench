@@ -69,6 +69,7 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,webmanifest}'],
         globIgnores: ['tools/**/*'],
         navigateFallback: 'index.html',
+        navigateFallbackDenylist: [/\/tools\/reimbursement(?:\/|$)/],
         cleanupOutdatedCaches: true
       }
     })
