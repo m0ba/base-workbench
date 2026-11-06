@@ -1,0 +1,84 @@
+name: Sync bundled reimbursement app
+
+on:
+  repository_dispatch:
+    types: [reimbursement-release]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: reimbursement-assistant release tag
+        required: true
+        type: string
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: sync-reimbursement
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      SOURCE_TAG: ${{ github.event.client_payload.tag || inputs.tag }}
+    steps:
+      - name: Validate source tag
+        shell: bash
+        run: |
+          if [[ ! "$SOURCE_TAG" =~ ^v?[0-9]+(\.[0-9]+)+$ ]]; then
+            echo "Invalid reimbursement release tag: $SOURCE_TAG" >&2
+            exit 1
+          fi
+
+      - name: Check out workbench
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Check out reimbursement release
+        uses: actions/checkout@v7
+        with:
+          repository: m0ba/reimbursement-assistant
+          ref: ${{ env.SOURCE_TAG }}
+          path: .upstream/reimbursement-assistant
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: .upstream/reimbursement-assistant/package-lock.json
+
+      - name: Build reimbursement release
+        working-directory: .upstream/reimbursement-assistant
+        run: |
+          npm ci
+          npm run build
+
+      - name: Update bundled copy
+        run: node scripts/sync-reimbursement.mjs .upstream/reimbursement-assistant/dist public/tools/reimbursement "$SOURCE_TAG"
+
+      - name: Commit updated copy
+        id: update
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/tools/reimbursement
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Already synchronized with $SOURCE_TAG"
+            exit 0
+          fi
+          git commit -m "chore: sync reimbursement $SOURCE_TAG"
+          git push origin HEAD:main
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy updated Pages
+        if: steps.update.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy-pages.yml --repo "$GITHUB_REPOSITORY" --ref main

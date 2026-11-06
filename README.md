@@ -38,6 +38,13 @@ npm run build
 npm run preview
 ```
 
+
+## 报账助手自动同步
+
+报账助手发布新 Release 后，会通过跨仓库通知触发本仓库的 `Sync bundled reimbursement app` 工作流。工作流会检出对应 Release、重新构建应用、更新 `public/tools/reimbursement/`、提交变化并重新部署 Pages；没有变化时不会生成提交。
+
+跨仓库通知需要报账助手仓库配置 `BASE_WORKBENCH_DISPATCH_TOKEN` Secret。该令牌只需对 `m0ba/base-workbench` 拥有 Actions 写权限。
+
 ## 发布版本
 
 版本更新时同步修改 `package.json` 与 `CHANGELOG.md`，并检查 `public/tools/reimbursement/` 的内置应用副本。提交后推送匹配的版本标签，例如：
